@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional
 class Game:
     opponent_id: int
     kickoff: datetime
+    #: pro_team_id of whichever side is hosting (whose stadium this is at).
+    home_team_id: int
 
 
 class WeekSchedule:
@@ -31,17 +33,27 @@ class WeekSchedule:
                 away = game.get("awayProTeamId")
                 opponent = away if team_id == home else home
                 date_ms = game.get("date")
-                if opponent is None or date_ms is None:
+                if opponent is None or date_ms is None or home is None:
                     continue
                 games[team_id] = Game(
                     opponent_id=opponent,
                     kickoff=datetime.fromtimestamp(date_ms / 1000, tz=timezone.utc),
+                    home_team_id=home,
                 )
                 break
         return cls(games)
 
     def game_for(self, pro_team_id: int) -> Optional[Game]:
         return self._games.get(pro_team_id)
+
+    def host_team_id(self, pro_team_id: int) -> Optional[int]:
+        """Which team's stadium this team's game is being played at."""
+        game = self._games.get(pro_team_id)
+        return game.home_team_id if game else None
+
+    def all_host_ids(self):
+        """The set of pro_team_ids hosting a game this week."""
+        return {g.home_team_id for g in self._games.values()}
 
     def is_on_bye(self, pro_team_id: int) -> bool:
         """True when the team has no game this week.

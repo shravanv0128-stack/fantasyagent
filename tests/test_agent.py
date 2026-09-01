@@ -110,7 +110,10 @@ class FakeClient:
 
 
 def make_config(**kwargs):
-    base = dict(league_id=1, season=2026, team_id=7, use_matchup=False)
+    base = dict(
+        league_id=1, season=2026, team_id=7,
+        use_matchup=False, use_vegas=False, use_weather=False, use_volatility=False,
+    )
     base.update(kwargs)
     return Config(**base)
 

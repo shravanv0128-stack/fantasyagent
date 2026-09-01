@@ -12,7 +12,7 @@ from .espn.client import ESPNClient, ESPNError
 from .espn.constants import SLOT_BENCH
 from .espn.models import Player, Roster, parse_roster, starting_slot_counts
 from .optimizer import Lineup, optimize
-from .signals import availability, matchup
+from .signals import availability, matchup, vegas, volatility, weather
 from .signals.schedule import WeekSchedule, season_opponents
 
 log = logging.getLogger(__name__)
@@ -66,34 +66,72 @@ class LineupAgent:
             f"{[parse_roster(t, 1).team_name for t in teams]}"
         )
 
-    def _matchup_model(self, week: int) -> matchup.MatchupModel:
-        """Learn points allowed per position from completed weeks."""
-        try:
-            payload = self.client.league(
-                ["kona_player_info"],
-                fantasy_filter={
-                    "players": {
-                        "limit": MATCHUP_PLAYER_LIMIT,
-                        "sortPercOwned": {"sortAsc": False, "sortPriority": 1},
-                    }
-                },
-            )
-            schedules = self.client.pro_team_schedules()
-        except ESPNError as exc:
-            # A missing matchup adjustment costs a fraction of a point; a failed
-            # run costs the whole week. Degrade instead of dying.
-            log.warning("Matchup model unavailable (%s); using projections as-is", exc)
-            return matchup.MatchupModel({})
+    def _fetch_raw_players(self) -> List[Dict[str, Any]]:
+        """The most-owned players league-wide, with full season stat history.
 
-        raw_players = [
-            entry.get("player", entry) for entry in (payload.get("players") or [])
-        ]
-        return matchup.build(
-            raw_players,
-            season_opponents(schedules, week),
-            week,
-            alpha=self.config.matchup_alpha,
+        Shared by the matchup and volatility models so both are built from
+        one ESPN request instead of two.
+        """
+        payload = self.client.league(
+            ["kona_player_info"],
+            fantasy_filter={
+                "players": {
+                    "limit": MATCHUP_PLAYER_LIMIT,
+                    "sortPercOwned": {"sortAsc": False, "sortPriority": 1},
+                }
+            },
         )
+        return [entry.get("player", entry) for entry in (payload.get("players") or [])]
+
+    def _find_opponent_team_id(
+        self, payload: Dict[str, Any], team_id: int, week: int
+    ) -> Optional[int]:
+        for entry in payload.get("schedule") or []:
+            if entry.get("matchupPeriodId") != week:
+                continue
+            home = (entry.get("home") or {}).get("teamId")
+            away = (entry.get("away") or {}).get("teamId")
+            if home == team_id:
+                return away
+            if away == team_id:
+                return home
+        return None
+
+    def _opponent_projected_total(
+        self,
+        payload: Dict[str, Any],
+        team_id: int,
+        week: int,
+        slot_counts: Dict[int, int],
+        week_schedule: WeekSchedule,
+        matchup_model: Optional[matchup.MatchupModel],
+        vegas_model: Optional[vegas.VegasModel],
+        wind_model: Optional[weather.WindModel],
+    ) -> Optional[float]:
+        """Your opponent's best-case lineup total, under the same signals
+        applied to your own roster. None if there's no game (a bye week in
+        the league) or the opponent's roster can't be read."""
+        opponent_id = self._find_opponent_team_id(payload, team_id, week)
+        if opponent_id is None:
+            return None
+        opponent_team = next(
+            (t for t in payload.get("teams") or [] if t.get("id") == opponent_id), None
+        )
+        if opponent_team is None:
+            return None
+        opp_roster = parse_roster(opponent_team, week)
+        if not opp_roster.players:
+            return None
+
+        availability.apply(opp_roster.players, week_schedule, respect_locks=False)
+        if matchup_model is not None:
+            matchup.apply(opp_roster.players, matchup_model)
+        if vegas_model is not None:
+            vegas.apply(opp_roster.players, vegas_model)
+        if wind_model is not None:
+            weather.apply(opp_roster.players, wind_model, week_schedule)
+
+        return optimize(opp_roster, slot_counts).projected_total
 
     # ------------------------------------------------------------- decision
 
@@ -119,7 +157,7 @@ class LineupAgent:
         if not slot_counts:
             raise ESPNError("Could not read this league's starting-lineup slots.")
 
-        payload = self.client.league(["mRoster", "mTeam"], scoring_period=week)
+        payload = self.client.league(["mRoster", "mTeam", "mMatchupScore"], scoring_period=week)
         team = self._find_team(payload.get("teams") or [])
         roster = parse_roster(team, week)
         if not roster.players:
@@ -136,10 +174,50 @@ class LineupAgent:
             now=now,
             respect_locks=self.config.respect_locks,
         )
+
+        # Matchup and volatility both need full season stat history; fetch it
+        # once and skip entirely if both are off.
+        raw_players: List[Dict[str, Any]] = []
+        if self.config.use_matchup or self.config.use_volatility:
+            try:
+                raw_players = self._fetch_raw_players()
+            except ESPNError as exc:
+                log.warning("Player stat history unavailable (%s); skipping matchup/volatility", exc)
+
+        matchup_model = None
         if self.config.use_matchup:
-            matchup.apply(roster.players, self._matchup_model(week))
+            matchup_model = matchup.build(
+                raw_players, season_opponents(schedules, week), week, alpha=self.config.matchup_alpha
+            )
+            matchup.apply(roster.players, matchup_model)
+
+        vegas_model = None
+        if self.config.use_vegas:
+            vegas_model = vegas.fetch(week, self.config.season)
+            vegas.apply(roster.players, vegas_model)
+
+        wind_model = None
+        if self.config.use_weather and not week_schedule.is_empty():
+            wind_model = weather.fetch(week_schedule, week_schedule.all_host_ids())
+            weather.apply(roster.players, wind_model, week_schedule)
 
         current_total = sum(p.score for p in roster.players if p.is_starting)
+
+        if self.config.use_volatility:
+            baseline_total = optimize(roster, slot_counts).projected_total
+            opponent_total = self._opponent_projected_total(
+                payload, roster.team_id, week, slot_counts, week_schedule,
+                matchup_model, vegas_model, wind_model,
+            )
+            if opponent_total is not None:
+                margin = baseline_total - opponent_total
+                volatility_model = volatility.build(raw_players, week)
+                volatility.apply(roster.players, volatility_model, margin)
+                log.info(
+                    "Projected margin %+.1f vs opponent; volatility tilt %s",
+                    margin,
+                    "toward ceiling" if margin < 0 else "toward floor" if margin > 0 else "neutral",
+                )
 
         for player in roster.players:
             if forced_start and player.player_id in forced_start:

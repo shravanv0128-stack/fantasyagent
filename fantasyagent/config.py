@@ -28,6 +28,15 @@ class Config:
     min_gain: float = 0.5
     use_matchup: bool = True
     matchup_alpha: float = 0.06
+    #: Team implied point totals from Vegas lines (ESPN's public scoreboard,
+    #: no key needed) — sharper than "points allowed by position" because it
+    #: isn't confounded by strength of schedule.
+    use_vegas: bool = True
+    #: Wind-driven downgrade for outdoor games (Open-Meteo, no key needed).
+    use_weather: bool = True
+    #: Tilts toward ceiling players when you're a big underdog in your
+    #: matchup, and toward floor players when you're a big favorite.
+    use_volatility: bool = True
     #: Never move a player whose game has already kicked off.
     respect_locks: bool = True
 
@@ -70,6 +79,7 @@ def load(path: str = "config.yaml") -> Config:
     known = {
         "league_id", "season", "team_id", "team_name", "min_gain",
         "use_matchup", "matchup_alpha", "respect_locks", "state_dir", "email_to",
+        "use_vegas", "use_weather", "use_volatility",
     }
     kwargs = {k: v for k, v in data.items() if k in known}
     kwargs["extra"] = {k: v for k, v in data.items() if k not in known}

@@ -23,6 +23,24 @@ matchup_alpha: 0.06
 # Never try to move a player whose game has already kicked off.
 respect_locks: true
 
+# Team implied point totals from Vegas lines (ESPN's public scoreboard, no
+# key needed). Sharper than "points allowed by position" because it isn't
+# confounded by strength of schedule — it prices in both offenses AND both
+# defenses for this specific game, refreshed all week as news breaks.
+use_vegas: true
+
+# Wind-driven downgrade for outdoor games (Open-Meteo, no key needed). Only
+# engages at real severity (15mph+), and only for outdoor stadiums — a
+# retractable roof is treated like a dome rather than tracked live, since
+# teams close it exactly when weather would otherwise matter.
+use_weather: true
+
+# Tilts toward higher-ceiling players when you're a big underdog in your
+# matchup this week, and toward steadier players when you're a big favorite.
+# Computed from each player's own game-to-game scoring history — no external
+# data, just a second look at your opponent's likely lineup.
+use_volatility: true
+
 # Where the pending proposal and audit log are written.
 state_dir: state
 

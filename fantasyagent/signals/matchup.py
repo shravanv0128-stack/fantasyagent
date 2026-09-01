@@ -126,4 +126,9 @@ def apply(players: Iterable[Player], model: MatchupModel) -> None:
     for player in players:
         if player.exclusion_reason:
             continue
-        player.matchup_multiplier *= model.multiplier(player.position, player.opponent_id)
+        factor = model.multiplier(player.position, player.opponent_id)
+        player.matchup_multiplier *= factor
+        if factor >= 1.03:
+            player.reasons.append("soft matchup by position")
+        elif factor <= 0.97:
+            player.reasons.append("tough matchup by position")

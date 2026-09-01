@@ -39,6 +39,12 @@ class Player:
     forced_bench: bool = False
     #: Free-text note surfaced in the proposal, e.g. why a forced move happened.
     note: Optional[str] = None
+    #: Short, human-readable reasons each signal contributed, in the order
+    #: they ran (e.g. "soft matchup vs run D", "27.5 implied team total",
+    #: "30mph wind", "leaning ceiling — big underdog"). Powers the "Why"
+    #: column in the weekly email instead of guessing from the blended
+    #: multiplier alone.
+    reasons: List[str] = field(default_factory=list)
 
     @property
     def pro_team(self) -> str:

@@ -14,22 +14,25 @@ Proposed changes (+9.4 projected):
   FLEX -> BE: Jaylen Waddle  (on bye)
   BE -> FLEX: Khalil Shakir
 
-Starters:
-  QB    Jayden Daniels           WSH   21.3
-  RB    Bijan Robinson           ATL   18.8
-  RB    Tyjae Spears             TEN   11.2
-  WR    Nico Collins             HOU   16.4
-  WR    Garrett Wilson           NYJ   14.1
-  FLEX  Khalil Shakir            BUF   12.0
-  TE    Trey McBride             ARI   11.6
-  D/ST  Ravens D/ST              BAL    7.4
-  K     Jake Bates               DET    8.1
-        TOTAL                         120.9
+Starters                          Team  Proj   Why
+  QB    Jayden Daniels            WSH   21.3   team implied for 27.5
+  RB    Bijan Robinson            ATL   18.8   soft matchup by position
+  RB    Tyjae Spears              TEN   11.2   leaning ceiling — you're an underdog this week
+  WR    Nico Collins              HOU   16.4
+  WR    Garrett Wilson            NYJ   14.1   18mph wind
+  FLEX  Khalil Shakir             BUF   12.0
+  TE    Trey McBride              ARI   11.6
+  D/ST  Ravens D/ST               BAL    7.4   opponent implied for only 15.5
+  K     Jake Bates                DET    8.1
+        TOTAL                          120.9
 ```
 
 ## What it actually decides on
 
-Four signals, in descending order of how much they matter:
+Every player evaluation runs through several independent signals, each capped
+so it sharpens close calls rather than overriding the projection wholesale —
+and each one that fires says so in the weekly email's "Why" column, so no
+decision is a black box.
 
 1. **Availability.** Anyone OUT, DOUBTFUL, on IR, suspended, or on a bye week is
    excluded outright. This is the whole ballgame — it is the one input that is
@@ -38,19 +41,51 @@ Four signals, in descending order of how much they matter:
    than excluded, so a star who might play still beats a healthy backup.
 2. **Projections.** ESPN's weekly projections, already scored under *your*
    league's settings — so PPR, bonuses, and custom scoring are handled without
-   you configuring anything.
+   you configuring anything. Everything below is an adjustment on top of this,
+   not a replacement for it.
 3. **Matchup.** Fantasy points allowed per position by each defense, computed
-   from the season's completed weeks under your scoring settings. Applied as a
-   small multiplier (±12% at the extremes), because ESPN's projections already
-   price in some matchup and a bigger adjustment would double-count it. Its job
-   is breaking near-ties, not overriding a two-point gap.
-4. **Kickoff times.** Players whose game has started are locked at ESPN and are
+   from the season's completed weeks under your scoring settings.
+4. **Game environment (Vegas).** Each team's implied point total, from the
+   spread and total on ESPN's own public scoreboard. This is deliberately
+   *not* "points allowed by position" — that stat is confounded by strength of
+   schedule (a defense that faced Ja'Marr Chase and Justin Jefferson looks
+   generous to WRs for reasons that have nothing to do with its coverage). The
+   market's line prices in both offenses and both defenses for this specific
+   game, and moves all week as news breaks. Defenses get the inverse: a low
+   opponent implied total is good for your D/ST.
+5. **Weather.** Sustained wind at outdoor stadiums downgrades the passing and
+   kicking game, but only past a real threshold (15mph+) — a light breeze or
+   ordinary rain isn't worth modeling, and it gets overrated relative to its
+   actual scoring impact. A dome game is never touched by outdoor weather, and
+   a retractable roof is treated like a dome rather than tracked live, since
+   teams close it exactly when weather would otherwise matter.
+6. **Your matchup.** This is the one that turns "maximize points" into
+   "maximize your chance of winning." It fetches your opponent's roster,
+   runs the same signals and optimizer over it, and compares your projected
+   total to theirs. If you're a big underdog, players with a genuinely
+   boom/bust history (computed from their own game-to-game scoring, nothing
+   external) get a modest boost — you need variance, not the safest median
+   outcome. If you're a big favorite, the same players get a modest discount
+   in favor of steadier ones. In a close matchup this does nothing.
+7. **Kickoff times.** Players whose game has started are locked at ESPN and are
    never included in a move — the agent works around them instead of failing.
 
-Slotting is solved as an assignment problem (Hungarian algorithm), not by
-filling slots one at a time. Filling greedily strands points: put your best
+All of it — Vegas lines and weather included — uses free, keyless public data
+and degrades gracefully: any single source being unreachable just skips that
+one signal for that run rather than failing the whole week, logged as a
+warning so it's visible in the workflow's run log if something needs a look.
+
+Slotting itself is solved as an assignment problem (Hungarian algorithm), not
+by filling slots one at a time. Filling greedily strands points: put your best
 remaining player in the FLEX and you can find yourself with no eligible starter
 for WR2. The optimizer considers every legal arrangement at once.
+
+**What this deliberately doesn't do:** read injury news, beat reports, or
+practice-participation trends. Doing that well requires a paid LLM call per
+player per week (interpreting a coach's quote or a beat writer's tweet isn't
+something a free, keyless API can do) — a real cost and a new failure surface
+this project hasn't taken on. If you have a read the numbers can't have, that
+is exactly what replying `start`/`bench` to the weekly email is for.
 
 ## Setup
 
@@ -181,6 +216,9 @@ week 1.
 | `min_gain` | `0.5` | Skip submitting below this projected improvement |
 | `use_matchup` | `true` | Apply the defense-vs-position adjustment |
 | `matchup_alpha` | `0.06` | How hard to lean on it, per standard deviation |
+| `use_vegas` | `true` | Apply the Vegas implied-team-total adjustment |
+| `use_weather` | `true` | Apply the wind downgrade for outdoor games |
+| `use_volatility` | `true` | Tilt toward ceiling/floor based on your matchup margin |
 | `respect_locks` | `true` | Never touch a player whose game has kicked off |
 | `state_dir` | `state` | Where the pending proposal and history live |
 
@@ -191,8 +229,9 @@ pip install pytest && python -m pytest -q
 ```
 
 The suite runs entirely against fixtures — no network, no credentials. It covers
-the optimizer (including the greedy-vs-assignment case and locked players), each
-signal, roster parsing, and the veto flow.
+the optimizer (including the greedy-vs-assignment case and locked players),
+every signal (availability, matchup, Vegas, weather, opponent-aware volatility),
+roster parsing, and the veto/email flow.
 
 ## Things worth knowing
 

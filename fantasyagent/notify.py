@@ -112,8 +112,7 @@ def to_slack(webhook: Optional[str], text: str) -> bool:
 
 def _start_reason(player) -> str:
     bits = [f"{player.projected_points:.1f} pts projected"]
-    if abs(player.matchup_multiplier - 1.0) >= 0.02:
-        bits.append("tough matchup" if player.matchup_multiplier < 1 else "soft matchup")
+    bits.extend(player.reasons)
     if player.injury_status == "QUESTIONABLE":
         bits.append("questionable, discounted")
     if player.note:
@@ -126,7 +125,9 @@ def _bench_reason(player) -> str:
         return player.exclusion_reason.capitalize()
     if player.note:
         return player.note
-    return "Lower projection than the starter(s) at this position"
+    bits = ["Lower projection than the starter(s) at this position"]
+    bits.extend(player.reasons)
+    return "; ".join(bits)
 
 
 def _escape(text: str) -> str:
