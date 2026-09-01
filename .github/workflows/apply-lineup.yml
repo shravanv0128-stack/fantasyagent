@@ -1,0 +1,88 @@
+name: Apply lineup
+
+# Sunday 12:00 ET — after the 90-minute inactive reports for the 1pm slate,
+# before kickoff. The agent re-decides from scratch here rather than replaying
+# Saturday's plan, so late scratches are caught.
+on:
+  schedule:
+    - cron: "0 16 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Decide but do not submit"
+        type: boolean
+        default: false
+
+permissions:
+  issues: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Check for a veto
+        id: veto
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NUMBER=$(gh issue list --label lineup-proposal --state open \
+            --limit 1 --json number --jq '.[0].number // empty')
+          echo "issue=$NUMBER" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$NUMBER" ]; then
+            echo "No open proposal issue; proceeding." 
+            echo "vetoed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LABELS=$(gh issue view "$NUMBER" --json labels --jq '.labels[].name')
+          COMMENTS=$(gh issue view "$NUMBER" --json comments --jq '.comments[].body')
+          if echo "$LABELS" | grep -qx 'veto' || echo "$COMMENTS" | grep -qi '^veto$'; then
+            echo "vetoed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vetoed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write config
+        if: steps.veto.outputs.vetoed != 'true'
+        run: printf '%s' "$FANTASY_CONFIG" > config.yaml
+        env:
+          FANTASY_CONFIG: ${{ secrets.FANTASY_CONFIG }}
+
+      - name: Submit lineup
+        if: steps.veto.outputs.vetoed != 'true'
+        id: submit
+        env:
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          FANTASY_SLACK_WEBHOOK: ${{ secrets.FANTASY_SLACK_WEBHOOK }}
+        run: |
+          set -o pipefail
+          python -m fantasyagent apply --force \
+            ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee result.txt
+
+      - name: Close out the proposal issue
+        if: always() && steps.veto.outputs.issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.veto.outputs.vetoed }}" = "true" ]; then
+            gh issue comment "${{ steps.veto.outputs.issue }}" \
+              --body "Vetoed — your lineup was left alone."
+          elif [ -f result.txt ]; then
+            { echo '```'; cat result.txt; echo '```'; } > out.md
+            gh issue comment "${{ steps.veto.outputs.issue }}" --body-file out.md
+          else
+            gh issue comment "${{ steps.veto.outputs.issue }}" \
+              --body ":warning: The apply job failed before it could submit. Set your lineup manually."
+          fi
+          gh issue close "${{ steps.veto.outputs.issue }}"

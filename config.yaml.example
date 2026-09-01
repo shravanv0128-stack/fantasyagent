@@ -1,0 +1,27 @@
+# Copy to config.yaml and fill in. Secrets live in the environment, not here.
+
+# From your league URL: .../leagues/{league_id}
+league_id: 123456
+season: 2026
+
+# Identify your team by id (from the URL's teamId=) or by name. One is enough.
+team_id: 3
+# team_name: "My Team Name"
+
+# Do not bother submitting unless the optimized lineup beats the current one
+# by at least this many projected points. Keeps the agent from churning the
+# roster over rounding noise.
+min_gain: 0.5
+
+# Opponent-strength adjustment, computed from points allowed by position.
+use_matchup: true
+# How hard to lean on it. 0.06 moves a projection by ~6% per standard
+# deviation of defensive strength; ESPN projections already price in some
+# matchup, so a bigger number double-counts it.
+matchup_alpha: 0.06
+
+# Never try to move a player whose game has already kicked off.
+respect_locks: true
+
+# Where the pending proposal and audit log are written.
+state_dir: state

@@ -1,0 +1,62 @@
+name: Propose lineup
+
+# Saturday 11:00 ET. Early enough to read the proposal, late enough that most
+# of the week's injury designations are final.
+on:
+  schedule:
+    - cron: "0 15 * * 6"
+  workflow_dispatch:
+    inputs:
+      week:
+        description: "Scoring period to run for (blank = current)"
+        required: false
+
+permissions:
+  issues: write
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Write config
+        run: printf '%s' "$FANTASY_CONFIG" > config.yaml
+        env:
+          FANTASY_CONFIG: ${{ secrets.FANTASY_CONFIG }}
+
+      - name: Compute lineup
+        env:
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          FANTASY_SLACK_WEBHOOK: ${{ secrets.FANTASY_SLACK_WEBHOOK }}
+        run: |
+          python -m fantasyagent propose ${{ inputs.week && format('--week {0}', inputs.week) || '' }}
+
+      - name: Open the veto issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          WEEK=$(python -c "import json;print(json.load(open('state/pending.json'))['week'])")
+          {
+            echo '```'
+            python -c "import json;print(json.load(open('state/pending.json'))['summary'])"
+            echo '```'
+            echo
+            echo "This will be submitted to ESPN automatically on Sunday morning."
+            echo "**To stop it:** add the \`veto\` label to this issue, or comment \`veto\`."
+          } > body.md
+
+          gh label create lineup-proposal --color 0E8A16 --force >/dev/null 2>&1 || true
+          gh label create veto --color B60205 --force >/dev/null 2>&1 || true
+          gh issue create \
+            --title "Week $WEEK lineup" \
+            --label lineup-proposal \
+            --body-file body.md
