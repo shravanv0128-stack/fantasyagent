@@ -134,6 +134,16 @@ which assumes US Eastern. Adjust if your slate or timezone differs — and note
 GitHub's scheduler can run up to ~15 minutes late under load, so leave margin
 before kickoff.
 
+**Nothing runs on your computer.** Both workflows execute on GitHub's runners on
+GitHub's schedule. Your machine can be closed, off, or in another country; the
+agent still sets your lineup. The only thing that has to be running is GitHub.
+
+GitHub disables scheduled workflows after 60 days with no repository activity,
+which would silently kill the agent mid-season. The apply job commits a
+`.github/last-run` heartbeat every week to prevent that. If you clear out the
+repo over the offseason, re-enable the schedules under the Actions tab before
+week 1.
+
 ## Configuration
 
 | Key | Default | Meaning |

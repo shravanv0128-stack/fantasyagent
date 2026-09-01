@@ -15,6 +15,7 @@ on:
 
 permissions:
   issues: write
+  contents: write
 
 jobs:
   apply:
@@ -86,3 +87,17 @@ jobs:
               --body ":warning: The apply job failed before it could submit. Set your lineup manually."
           fi
           gh issue close "${{ steps.veto.outputs.issue }}"
+
+      - name: Heartbeat
+        # GitHub disables scheduled workflows after 60 days with no repository
+        # activity. A weekly commit keeps the season's crons alive without
+        # anyone having to remember to touch the repo.
+        if: always()
+        run: |
+          mkdir -p .github
+          date -u +"last run: %Y-%m-%dT%H:%M:%SZ" > .github/last-run
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last-run
+          git commit -m "chore: lineup agent heartbeat" || exit 0
+          git push
