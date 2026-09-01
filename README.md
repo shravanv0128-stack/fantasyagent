@@ -93,19 +93,44 @@ python -m fantasyagent --week 5 propose # override the scoring period
 Start with `apply --dry-run` for a week or two. Read what it wants to do. Only
 hand it write access once it stops surprising you.
 
-### The veto window
+### The email loop
 
-`propose` never writes to ESPN. It saves the plan to `state/pending.json` and
-tells you about it. `apply` then re-decides **from scratch** rather than
-replaying Saturday's plan — Sunday's inactive reports are exactly the news worth
-waiting for — and submits the fresh decision unless you vetoed.
+If `email_to` is set, `propose` emails you the lineup — starters and bench in
+a table, with a one-line reason for each ("18.4 pts projected", "on bye",
+"lower projection than the starter at this position"). The email ends with
+the exact words it understands:
 
-A veto means "leave my lineup alone this week", not "reject these specific
-moves". It is a hard stop.
+```
+approve                  lock this lineup in right now
+veto                      leave your current ESPN lineup untouched
+start <player name>      force that player into the lineup
+bench <player name>      force that player out of the lineup
+```
+
+You reply from your phone, or don't reply at all — `apply` reads your inbox
+Sunday morning before doing anything else. No reply means it goes ahead and
+submits the lineup it already showed you. A reply's `start`/`bench` lines are
+matched by name against your roster and folded into a re-optimized lineup
+before submission; anything it can't match to exactly one player is skipped
+and reported back rather than guessed at, and anything it doesn't recognize
+at all (a full sentence, a question) is likewise left alone and noted.
+
+Parsing is deliberately keyword-only — a misread free-text instruction that
+silently benches the wrong player is worse than one that's ignored. If you
+want a change it can't parse, reply with `start`/`bench` lines instead.
+
+`apply` re-decides the whole lineup **from scratch** rather than replaying
+Saturday's plan, so Sunday's inactive reports are exactly the news worth
+waiting for — a swap request just gets folded into that fresh decision. A
+`veto` reply is a hard stop: leave my lineup alone this week, not reject these
+specific moves.
 
 `apply` also holds off if the new lineup beats the current one by less than
-`min_gain` (default 0.5 projected points). Churning your roster for rounding
-noise is worse than leaving it alone.
+`min_gain` (default 0.5 points) — unless you replied `approve` or sent a swap,
+which are taken as explicit instructions and always go through.
+
+If `email_to` is unset, none of this runs — `propose` still saves the plan and
+prints/Slacks it, and `apply` still submits automatically on schedule.
 
 ## Running it weekly
 
@@ -123,7 +148,9 @@ Add these repository secrets:
 | --- | --- |
 | `ESPN_SWID` | Your `SWID` cookie |
 | `ESPN_S2` | Your `espn_s2` cookie |
-| `FANTASY_CONFIG` | The full contents of your `config.yaml` |
+| `FANTASY_CONFIG` | The full contents of your `config.yaml` (set `email_to` in it) |
+| `GMAIL_ADDRESS` | The Gmail account the proposal is sent from |
+| `GMAIL_APP_PASSWORD` | An [app password](https://myaccount.google.com/apppasswords) for that account (needs 2-Step Verification on) |
 | `FANTASY_SLACK_WEBHOOK` | Optional — Slack incoming webhook for proposals |
 
 `config.yaml` goes in a secret rather than the repo only so your league id stays

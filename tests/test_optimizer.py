@@ -125,3 +125,28 @@ def test_empty_roster_is_handled():
     lineup = optimize(Roster(team_id=1, team_name="T", players=[]), STANDARD)
     assert not lineup.has_changes
     assert len(lineup.unfilled_slots) == 9
+
+
+def test_forced_start_overrides_normal_ranking():
+    roster = full_roster()
+    roster.by_id(10).forced_start = True  # TE2, 4.0 pts, would normally sit behind TE1 (10.0)
+    lineup = optimize(roster, STANDARD)
+    assert lineup.assignments[10] == SLOT_TE
+    assert lineup.assignments[9] == SLOT_BENCH
+
+
+def test_forced_bench_excludes_even_the_top_scorer():
+    roster = full_roster()
+    roster.by_id(1).forced_bench = True  # QB1, the only real QB option
+    lineup = optimize(roster, STANDARD)
+    assert lineup.assignments[1] == SLOT_BENCH
+    assert lineup.assignments[2] == SLOT_QB
+
+
+def test_forced_start_beats_an_exclusion():
+    roster = full_roster()
+    player = roster.by_id(3)  # RB1
+    player.exclusion_reason = "out"
+    player.forced_start = True
+    lineup = optimize(roster, STANDARD)
+    assert lineup.assignments[3] == SLOT_RB

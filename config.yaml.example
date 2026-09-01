@@ -25,3 +25,8 @@ respect_locks: true
 
 # Where the pending proposal and audit log are written.
 state_dir: state
+
+# Email address to send the weekly proposal to. Leave unset to skip email
+# entirely (Slack/stdout still work). The Gmail account and app password that
+# send it live in the environment (GMAIL_ADDRESS / GMAIL_APP_PASSWORD), not here.
+email_to: you@example.com

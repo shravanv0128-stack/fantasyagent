@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from .config import Config
 from .espn.client import ESPNClient, ESPNError
 from .espn.constants import SLOT_BENCH
-from .espn.models import Roster, parse_roster, starting_slot_counts
+from .espn.models import Player, Roster, parse_roster, starting_slot_counts
 from .optimizer import Lineup, optimize
 from .signals import availability, matchup
 from .signals.schedule import WeekSchedule, season_opponents
@@ -27,6 +27,7 @@ class Decision:
     roster: Roster
     lineup: Lineup
     current_total: float
+    slot_counts: Dict[int, int] = None  # type: ignore[assignment]
 
     @property
     def gain(self) -> float:
@@ -96,7 +97,19 @@ class LineupAgent:
 
     # ------------------------------------------------------------- decision
 
-    def decide(self, week: Optional[int] = None, now: Optional[datetime] = None) -> Decision:
+    def decide(
+        self,
+        week: Optional[int] = None,
+        now: Optional[datetime] = None,
+        forced_start: Optional[List[int]] = None,
+        forced_bench: Optional[List[int]] = None,
+    ) -> Decision:
+        """Decide this week's lineup.
+
+        ``forced_start``/``forced_bench`` are player ids from a parsed reply
+        (see :mod:`fantasyagent.commands`); they override the normal ranking
+        for those specific players.
+        """
         settings = self.client.league(["mSettings"])
         week = week or settings.get("scoringPeriodId")
         if not week:
@@ -127,8 +140,27 @@ class LineupAgent:
             matchup.apply(roster.players, self._matchup_model(week))
 
         current_total = sum(p.score for p in roster.players if p.is_starting)
+
+        for player in roster.players:
+            if forced_start and player.player_id in forced_start:
+                player.forced_start = True
+            if forced_bench and player.player_id in forced_bench:
+                player.forced_bench = True
+
         lineup = optimize(roster, slot_counts)
-        return Decision(week=week, roster=roster, lineup=lineup, current_total=current_total)
+        return Decision(
+            week=week, roster=roster, lineup=lineup,
+            current_total=current_total, slot_counts=slot_counts,
+        )
+
+    def reoptimize(self, decision: Decision) -> Decision:
+        """Re-run the optimizer over ``decision.roster`` after its players'
+        forced_start/forced_bench flags were mutated (e.g. by an email reply)."""
+        lineup = optimize(decision.roster, decision.slot_counts)
+        return Decision(
+            week=decision.week, roster=decision.roster, lineup=lineup,
+            current_total=decision.current_total, slot_counts=decision.slot_counts,
+        )
 
     # -------------------------------------------------------------- execute
 

@@ -34,6 +34,11 @@ class Config:
     state_dir: Path = Path("state")
     slack_webhook: Optional[str] = None
 
+    #: Recipient of the weekly proposal email, e.g. sv1066@princeton.edu.
+    email_to: Optional[str] = None
+    gmail_address: Optional[str] = None
+    gmail_app_password: Optional[str] = None
+
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -44,6 +49,10 @@ class Config:
     @property
     def has_credentials(self) -> bool:
         return bool(self.swid and self.espn_s2)
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.email_to and self.gmail_address and self.gmail_app_password)
 
 
 def load(path: str = "config.yaml") -> Config:
@@ -60,7 +69,7 @@ def load(path: str = "config.yaml") -> Config:
 
     known = {
         "league_id", "season", "team_id", "team_name", "min_gain",
-        "use_matchup", "matchup_alpha", "respect_locks", "state_dir",
+        "use_matchup", "matchup_alpha", "respect_locks", "state_dir", "email_to",
     }
     kwargs = {k: v for k, v in data.items() if k in known}
     kwargs["extra"] = {k: v for k, v in data.items() if k not in known}
@@ -68,5 +77,9 @@ def load(path: str = "config.yaml") -> Config:
     kwargs["swid"] = os.environ.get("ESPN_SWID") or None
     kwargs["espn_s2"] = os.environ.get("ESPN_S2") or None
     kwargs["slack_webhook"] = os.environ.get("FANTASY_SLACK_WEBHOOK") or None
+    kwargs["gmail_address"] = os.environ.get("GMAIL_ADDRESS") or None
+    kwargs["gmail_app_password"] = os.environ.get("GMAIL_APP_PASSWORD") or None
+    if "email_to" not in kwargs:
+        kwargs["email_to"] = os.environ.get("LINEUP_EMAIL_TO") or None
 
     return Config(**kwargs)

@@ -32,6 +32,8 @@ class Proposal:
     vetoed_at: Optional[str] = None
     applied: bool = False
     applied_at: Optional[str] = None
+    #: Message-ID of the proposal email, used to find replies in the same thread.
+    email_message_id: Optional[str] = None
 
     @classmethod
     def new(cls, season: int, week: int, team_id: int, **kwargs: Any) -> "Proposal":

@@ -66,6 +66,8 @@ jobs:
           ESPN_SWID: ${{ secrets.ESPN_SWID }}
           ESPN_S2: ${{ secrets.ESPN_S2 }}
           FANTASY_SLACK_WEBHOOK: ${{ secrets.FANTASY_SLACK_WEBHOOK }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           set -o pipefail
           python -m fantasyagent apply --force \

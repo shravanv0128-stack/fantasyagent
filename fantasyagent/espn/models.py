@@ -32,6 +32,13 @@ class Player:
     opponent_id: Optional[int] = None
     matchup_multiplier: float = 1.0
     exclusion_reason: Optional[str] = None
+    #: Set by a "start <player>" email reply. Overrides the normal ranking
+    #: (and even an exclusion) because the user asked for it explicitly.
+    forced_start: bool = False
+    #: Set by a "bench <player>" email reply.
+    forced_bench: bool = False
+    #: Free-text note surfaced in the proposal, e.g. why a forced move happened.
+    note: Optional[str] = None
 
     @property
     def pro_team(self) -> str:
@@ -47,11 +54,16 @@ class Player:
 
     @property
     def score(self) -> float:
-        """Projection after matchup and injury adjustments.
+        """Projection after matchup, injury, and manual overrides.
 
-        Zero for anyone who cannot help this week, so the optimizer will only
-        start them if a slot has no alternative.
+        Zero for anyone excluded, so the optimizer only starts them if a slot
+        has no alternative. A forced start beats every unforced player
+        regardless of projection, since the user asked for it explicitly.
         """
+        if self.forced_bench:
+            return 0.0
+        if self.forced_start:
+            return 1_000_000.0 + self.projected_points
         if self.exclusion_reason:
             return 0.0
         return self.projected_points * self.matchup_multiplier
